@@ -7,14 +7,19 @@ https://wiki.xnat.org/display/XNAT16/XNAT+Configuration+Framework
 [tomcat@opera ~]$ cat recon.json 
 { "/.*/": [ "/.*nii.*/" ] }
 
+#not needed, these are collected with SCANS
 tomcat@opera ~]$ curl -b JSESSIONID=$jses "$NUNDA_HOST/data/projects/ka_test/config/XImgView/experimentResources/filters?inbody=true" -d @res.json -X PUT
 [tomcat@opera ~]$ cat res.json 
 { "/NIFTI/": [ "/.*/" ] }
 
 select c.tool, c.path, c.status, c.unversioned, c.reason, d.contents from xhbm_configuration c, xhbm_configuration_data d where c.tool = ‘toolName' and c.path = 'path' and c.config_data = d.id;
 ```
+*TO DO*
 
-_Creating a New Configuration_
+Keep loading indicator after reconstructions have been loaded while we wait for scans
+
+*Creating a New Configuration*
+
 The REST URL for creating a new configuration is:
 PUT http://server/data/config/toolName/path?inbody=true
 Where:
@@ -23,11 +28,13 @@ toolName is the feature or tool that will use the configuration you're storing
 path is an arbitrary path on the URL; these paths are used to distinguish multiple configurations for the same tool
 You'll need to specify the contents of your configuration in the request body. Note that the format of the configuration contents is completely dependent on the needs of the tool you're configuring. The configuration service itself doesn't really care what those contents are.
 
-_Enabling and Disabling an Existing Configuration_
+*Enabling and Disabling an Existing Configuration*
+
 To enable or disable a configuration, you just need to make a PUT call to the REST URL for the configuration with the query variable status set to the state you want:
 PUT http://server/data/config/toolName/path?status=[enabled|disabled]
 You can check the configuration again to make sure everything is set properly. You can toggle the enabled and disabled states by calling these successively.
 
+_END OF KATE'S ADDNS_
 
 The XNATImageViewer is the official HTML5 web neuroimage viewing module for [XNAT](http://www.xnat.org/).  It's built on [XTK](https://github.com/xtk/X#readme), [Google Closure](https://developers.google.com/closure/), [JSZip](http://stuk.github.io/jszip/), and [Sass](http://sass-lang.com/).
 
