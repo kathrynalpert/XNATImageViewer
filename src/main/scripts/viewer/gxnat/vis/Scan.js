@@ -81,6 +81,9 @@ goog.exportSymbol('gxnat.vis.Scan', gxnat.vis.Scan);
  * @type {!Array.<string>}
  */
 gxnat.vis.Scan.acceptableFileTypes = [    
+    'ima',
+    'IMA',
+    'DCM',
     'dcm',
     'dicom',
     'nii.gz',

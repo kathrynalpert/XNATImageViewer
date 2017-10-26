@@ -1,3 +1,34 @@
+KA added: 
+
+https://wiki.xnat.org/display/XNAT16/XNAT+Configuration+Framework
+
+```
+[tomcat@opera ~]$ curl -b JSESSIONID=$jses "$NUNDA_HOST/data/projects/ka_test/config/XImgView/experimentReconstructions/filters?inbody=true" -d @recon.json -X PUT
+[tomcat@opera ~]$ cat recon.json 
+{ "/.*/": [ "/.*nii.*/" ] }
+
+tomcat@opera ~]$ curl -b JSESSIONID=$jses "$NUNDA_HOST/data/projects/ka_test/config/XImgView/experimentResources/filters?inbody=true" -d @res.json -X PUT
+[tomcat@opera ~]$ cat res.json 
+{ "/NIFTI/": [ "/.*/" ] }
+
+select c.tool, c.path, c.status, c.unversioned, c.reason, d.contents from xhbm_configuration c, xhbm_configuration_data d where c.tool = ‘toolName' and c.path = 'path' and c.config_data = d.id;
+```
+
+_Creating a New Configuration_
+The REST URL for creating a new configuration is:
+PUT http://server/data/config/toolName/path?inbody=true
+Where:
+server is the address to your XNAT server (you may also have a path on the server for /xnat or something similar)
+toolName is the feature or tool that will use the configuration you're storing
+path is an arbitrary path on the URL; these paths are used to distinguish multiple configurations for the same tool
+You'll need to specify the contents of your configuration in the request body. Note that the format of the configuration contents is completely dependent on the needs of the tool you're configuring. The configuration service itself doesn't really care what those contents are.
+
+_Enabling and Disabling an Existing Configuration_
+To enable or disable a configuration, you just need to make a PUT call to the REST URL for the configuration with the query variable status set to the state you want:
+PUT http://server/data/config/toolName/path?status=[enabled|disabled]
+You can check the configuration again to make sure everything is set properly. You can toggle the enabled and disabled states by calling these successively.
+
+
 The XNATImageViewer is the official HTML5 web neuroimage viewing module for [XNAT](http://www.xnat.org/).  It's built on [XTK](https://github.com/xtk/X#readme), [Google Closure](https://developers.google.com/closure/), [JSZip](http://stuk.github.io/jszip/), and [Sass](http://sass-lang.com/).
 
 Demo
