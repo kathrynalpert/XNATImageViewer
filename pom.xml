@@ -6,102 +6,196 @@
 
     <parent>
         <groupId>org.nrg</groupId>
-        <artifactId>nrg</artifactId>
-        <version>1.6.5</version>
-        <relativePath>../pom.xml</relativePath>
+        <artifactId>parent</artifactId>
+        <version>1.7.4</version>
     </parent>
 
-    <groupId>org.nrg.xnatx.modules</groupId>
-    <artifactId>ximgview</artifactId>
-    <name>XNAT Image Viewer Module</name>
+    <groupId>org.nrg.xnatx.plugins</groupId>
+    <artifactId>ximgview-plugin</artifactId>
+    <version>1.0.0</version>
+
+    <name>XNAT Image Viewer Module (XImgView)</name>
     <description>
         This is the module for the XNAT Image Viewer. XImgView is an HTML5-based
         viewer interface that integrates directly into the XNAT workflow.
     </description>
-
-    <build>
-        <finalName>xnatx-${project.artifactId}-${project.version}</finalName>
-        <pluginManagement>
-            <plugins>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <version>2.3.2</version>
-                    <configuration>
-                        <excludes>
-                            <exclude>**/*.*</exclude>
-                        </excludes>
-                    </configuration>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-surefire-plugin</artifactId>
-                    <version>2.9</version>
-                    <configuration>
-                        <skip>true</skip>
-                    </configuration>
-                </plugin>
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-resources-plugin</artifactId>
-                    <version>2.3</version>
-                </plugin>
-            </plugins>
-        </pluginManagement>
-        <resources>
-            <resource>
-                <directory>${basedir}</directory>
-                <includes>
-                    <include>**/*</include>
-                </includes>
-                <excludes>
-                    <exclude>src/schemas/xnat/**/*</exclude>
-                    <exclude>**/xnat.xsd</exclude>
-                    <exclude>*.iml</exclude>
-                    <exclude>target/**</exclude>
-                    <exclude>pom.xml</exclude>
-                </excludes>
-            </resource>
-        </resources>
-    </build>
-
-    <distributionManagement>
-        <repository>
-            <id>XNAT Server</id>
-            <name>XNAT Maven Library Release</name>
-            <url>http://maven.xnat.org/libs-release-local</url>
-        </repository>
-        <snapshotRepository>
-            <id>XNAT Server</id>
-            <name>XNAT Maven Library Snapshots</name>
-            <url>http://maven.xnat.org/libs-snapshot-local</url>
-        </snapshotRepository>
-    </distributionManagement>
-
-    <pluginRepositories>
-        <pluginRepository>
-            <name>XNAT Snapshot Maven Plugin Repo</name>
-            <id>org.nrg.maven.plugins.snapshot</id>
-            <url>http://maven.xnat.org/plugins-snapshot</url>
-        </pluginRepository>
-        <pluginRepository>
-            <name>XNAT Release Maven Plugin Repo</name>
-            <id>org.nrg.maven.plugins.release</id>
-            <url>http://maven.xnat.org/plugins-release</url>
-        </pluginRepository>
-    </pluginRepositories>
+    <scm>
+        <connection>scm:git:ssh://git@bitbucket.org/xnatdev/xnat-image-viewer-plugin.git</connection>
+        <developerConnection>scm:git:ssh://git@bitbucket.org/xnatdev/xnat-image-viewer-plugin.git</developerConnection>
+        <url>https://bitbucket.org/xnatdev/xnat-image-viewer-plugin.git</url>
+    </scm> 
+    <properties>
+       <timestamp>${maven.build.timestamp}</timestamp>
+       <maven.build.timestamp.format>yyyy-MM-dd HH:mm</maven.build.timestamp.format>
+    </properties>
+    <profiles>
+       <profile>
+          <id>1.7</id>
+          <activation>
+          <activeByDefault>true</activeByDefault>
+          </activation>
+          <build>
+              <finalName>${project.artifactId}-${project.version}</finalName>
+              <pluginManagement>
+                  <plugins>
+                      <plugin>
+                        <!-- Not sure why this currently does not seem to be generating a build number -->
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>buildnumber-maven-plugin</artifactId>
+                        <version>1.4</version>
+                        <configuration>
+                          <shortRevisionLength>5</shortRevisionLength>
+                          <doCheck>false</doCheck>
+                          <doUpdate>true</doUpdate>
+                        </configuration>
+                        <executions>
+                          <execution>
+                            <phase>validate</phase>
+                            <goals>
+                              <goal>create</goal>
+                            </goals>
+                          </execution>
+                        </executions>
+                      </plugin>
+                      <plugin>
+                          <groupId>org.apache.maven.plugins</groupId>
+                          <artifactId>maven-compiler-plugin</artifactId>
+                          <version>2.3.2</version>
+                          <configuration>
+                              <excludes>
+                                  <exclude>**/*.*</exclude>
+                              </excludes>
+                          </configuration>
+                      </plugin>
+                      <plugin>
+                          <groupId>org.apache.maven.plugins</groupId>
+                          <artifactId>maven-surefire-plugin</artifactId>
+                          <version>2.9</version>
+                          <configuration>
+                              <skip>true</skip>
+                          </configuration>
+                      </plugin>
+                      <plugin>
+                          <groupId>org.apache.maven.plugins</groupId>
+                          <artifactId>maven-resources-plugin</artifactId>
+                          <version>2.3</version>
+                      </plugin>
+                      <plugin>
+                          <groupId>org.apache.maven.plugins</groupId>
+                          <artifactId>maven-jar-plugin</artifactId>
+                          <configuration>
+                             <archive>
+                               <index>true</index>
+                               <manifest>
+                                 <addClasspath>true</addClasspath>
+                               </manifest>
+                               <manifestEntries>
+                                 <Application-Name>${project.name}</Application-Name>
+                                 <Implementation-Version>${project.version}</Implementation-Version>
+                                 <Build-Date>${maven.build.timestamp}</Build-Date>
+                                 <!--<Build-Number>${buildNumber}</Build-Number>-->
+                                 <Build-Number>Manual</Build-Number>
+                               </manifestEntries>
+                             </archive>
+                           </configuration>
+                      </plugin>
+                  </plugins>
+              </pluginManagement>
+              <resources>
+                  <resource>
+                      <targetPath>META-INF/resources</targetPath>
+                      <directory>${basedir}/src/main</directory>
+                      <includes>
+                          <include>**/*</include>
+                      </includes>
+                      <excludes>
+                          <exclude>**/.sass-cache/**</exclude>
+                      </excludes>
+                  </resource>
+                  <resource>
+                      <directory>${basedir}</directory>
+                      <includes>
+                          <include>License.txt</include>
+                          <include>README.md</include>
+                      </includes>
+                  </resource>
+              </resources>
+          </build>
+       </profile>
+       <profile>
+          <id>1.6.5</id>
+          <build>
+              <finalName>xnatx-ximgview-1.6.5</finalName>
+              <pluginManagement>
+                  <plugins>
+                      <plugin>
+                          <groupId>org.apache.maven.plugins</groupId>
+                          <artifactId>maven-compiler-plugin</artifactId>
+                          <version>2.3.2</version>
+                          <configuration>
+                              <excludes>
+                                  <exclude>**/*.*</exclude>
+                              </excludes>
+                          </configuration>
+                      </plugin>
+                      <plugin>
+                          <groupId>org.apache.maven.plugins</groupId>
+                          <artifactId>maven-surefire-plugin</artifactId>
+                          <version>2.9</version>
+                          <configuration>
+                              <skip>true</skip>
+                          </configuration>
+                      </plugin>
+                      <plugin>
+                          <groupId>org.apache.maven.plugins</groupId>
+                          <artifactId>maven-resources-plugin</artifactId>
+                          <version>2.3</version>
+                      </plugin>
+                  </plugins>
+              </pluginManagement>
+              <resources>
+                 <resource>
+                   <directory>${basedir}</directory>
+                   <includes>
+                       <include>**/*</include>
+                   </includes>
+                   <excludes>
+                      <exclude>src/schemas/xnat/**/*</exclude>
+                      <exclude>**/xnat.xsd</exclude>
+                      <exclude>*.iml</exclude>
+                      <exclude>target/**</exclude>
+                      <exclude>pom.xml</exclude>
+                  </excludes>
+                 </resource>
+              </resources>
+          </build>
+       </profile>
+    </profiles>
 
     <repositories>
         <repository>
-            <name>XNAT Release Maven Repo</name>
-            <id>org.nrg.maven.artifacts.release</id>
-            <url>http://maven.xnat.org/libs-release</url>
+            <id>org.nrg.xnat.maven.libraries.release</id>
+            <name>XNAT Maven Release Libraries</name>
+            <url>https://nrgxnat.jfrog.io/nrgxnat/libs-release</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
         </repository>
         <repository>
-            <name>XNAT Snapshot Maven Repo</name>
-            <id>org.nrg.maven.artifacts.snapshot</id>
-            <url>http://maven.xnat.org/libs-snapshot</url>
+            <id>org.nrg.xnat.maven.libraries.snapshot</id>
+            <name>XNAT Maven Snapshot Libraries</name>
+            <url>https://nrgxnat.jfrog.io/nrgxnat/libs-snapshot</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
         </repository>
     </repositories>
 
 </project>
+

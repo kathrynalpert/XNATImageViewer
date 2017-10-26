@@ -62,7 +62,6 @@ X.parserDCM = function() {
 goog.inherits(X.parserDCM, X.parser);
 
 
-
 /**
  * @inheritDoc
  */
@@ -71,6 +70,7 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
   // needed, for renderer2d and 3d legacy...
   object.MRI = {};
   object.MRI.loaded_files = 0;
+  object.isMultiframeDicom = false;
 //window.console.log("\n\nBegin parse");
   // parse the byte stream
   this.parseStream(data, object);
@@ -112,6 +112,52 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
         throw new Error('This scan does not contain imaging data that can be visualized.');
     }
 
+    try {
+
+       this.doSlicing(container, object, data, flag);
+ 
+    } catch (e) {
+
+       // The slicer has problems with some orientations that need to be tracked down.  Try slicer again specifying default orientation for all slices.
+       console.log("ERROR: Slicer exception.  Trying again using default image orientation",e);
+       var default_orientation;
+       // try to improve chances of picking the actual orientation.
+       if (Math.abs(object.slices[0]['image_orientation_patient'][1])>Math.abs(object.slices[0]['image_orientation_patient'][0])) {
+          default_orientation = [0, 1, 0, 0, 0, -1];
+       } else if (Math.abs(object.slices[0]['image_orientation_patient'][4])>Math.abs(object.slices[0]['image_orientation_patient'][5])) {
+          default_orientation = [1, 0, 0, 0, 1, 0];
+       } else {
+          default_orientation = [1, 0, 0, 0, 0, -1];
+       }
+       for (var i = 0; i < object.slices.length; i++) {
+           var slice = object.slices[i];
+           slice['image_orientation_patient'] = default_orientation;
+       }
+       this.doSlicing(container, object, data, flag);
+       // TODO:  XImgView specific code here. Would be better to move this out of the Xtk code, but we need to warn users.
+       if (typeof xiv !== 'undefined' && typeof xiv.ui !== 'undefined' && typeof xiv.ui.ViewBoxDialogs !== 'undefined') {
+           var ele = document.getElementsByClassName('xiv-ui-viewbox-viewframe');
+           if (ele.length>0) {
+              setTimeout(function(){
+                 xiv.ui.ViewBoxDialogs.createModalOkDialog("WARNING:  Display orientation for this image could not be reliably determined.", ele[0], null)
+              },1000);
+           }
+       }
+    }
+
+  }
+      
+  // the object should be set up here, so let's fire a modified event
+  var modifiedEvent = new X.event.ModifiedEvent();
+  modifiedEvent._object = object;
+  modifiedEvent._container = container;
+  this.dispatchEvent(modifiedEvent);
+
+}
+
+
+X.parserDCM.prototype.doSlicing = function(container, object, data, flag) {
+
     //************************************
     //
     // ErasmusMC addition (end)
@@ -125,7 +171,7 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
 
       // series undefined yet
       if(!series.hasOwnProperty(object.slices[i]['series_instance_uid'])){
-
+        
         series[object.slices[i]['series_instance_uid']] = new Array();
         imageSeriesPushed[object.slices[i]['series_instance_uid']] = {};
 
@@ -133,11 +179,13 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
       
       // push image if it has not been pushed yet
       if(!imageSeriesPushed[object.slices[i]['series_instance_uid']].hasOwnProperty(object.slices[i]['sop_instance_uid'])){
-
-        imageSeriesPushed[object.slices[i]['series_instance_uid']][object.slices[i]['sop_instance_uid']] = true;
+        // Multiframe DICOM will need to continue pushing series
+        if (!object.isMultiframeDicom) {
+          imageSeriesPushed[object.slices[i]['series_instance_uid']][object.slices[i]['sop_instance_uid']] = true;
+        }
         series[object.slices[i]['series_instance_uid']].push(object.slices[i]);
 
-      }
+      } 
 
     }
 
@@ -158,6 +206,7 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
     var first_image_stacks = first_image.length;
     // container for volume specific information
     var volumeAttributes = {};
+
 
     ////////////////////////////////////////////////////////////////////////
     //
@@ -246,7 +295,6 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
 
     }
  
-
       //************************************
       //
       // Moka/NRG addition (start)
@@ -274,7 +322,6 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
       //
       //************************************
       
-
       if ((_ordering == 'image_position_patient' && first_image_stacks < 5) ||
           (object['series_description'] != undefined && object['series_description'].toLowerCase().search("survey") != -1 && first_image_stacks < 20)) {
 
@@ -328,16 +375,18 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
       // For debugging purposes.
       //
       //************************************
+      /*
       var _deb = true;
       if (_deb){
 	  var i = 0;
 	  var len = first_image.length;
 	  for (; i<len; i++){
-	      /*
 	      window.console.log(
 		  '\n',
 		  i,
 		  '\nInstance number:',
+		  first_image[i]['image_orientation_patient'], 
+		  '\nImage Orientation Patient:' , 
 		  first_image[i]['instance_number'], 
 		  '\nImage Position Patient:',
 		  first_image[i]['image_position_patient'], 
@@ -345,9 +394,9 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
 		  first_image[i]['pixel_spacing'], 
 		  '\nInitial Ordering:', 
 		  _ordering);
-		  */
 	  }
       }
+      */
       //************************************
       //
       // Moka/NRG addition (end)
@@ -471,7 +520,6 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
 	      }
 	  }
 	      
-	  
 
 	  //
 	  // Determine if the 'instance_number's are out of order.
@@ -649,9 +697,9 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
 			     "of files because " + 
 			     "volume's \"reslicing\" property is set " + 
 			     "to false.");     
+	  first_image_expected_nb_slices = first_image_stacks;
 	  window.console.log("Expected slices:", 
 			     first_image_expected_nb_slices);
-	  first_image_expected_nb_slices = first_image_stacks;
 
 	  window.console.log('Ordering:', _ordering);
       }
@@ -664,7 +712,6 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
 
     var first_slice_size = first_image[0]['columns'] * first_image[0]['rows'];
     var first_image_size = first_slice_size * first_image_expected_nb_slices;
-
 
 
       //************************************
@@ -864,9 +911,6 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
 	    _data = newData;
 	}
 	
-	//
-	// We can't have decimals with allocating the buffer array.
-	//
 	first_image_data.set(
 	    _data, Math.round(_distance_position) * first_slice_size);
 
@@ -928,13 +972,25 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
 
 
     volumeAttributes.dimensions = object._dimensions;
-      
 
     // get the min and max intensities
-    var min_max = this.arrayMinMax(first_image_data);
+    //******************************************
+    // NRG addition (start) (MRH:  2016/10/20)
+    // ----------------------------------------
+    // Explanation of addition.  The standard arrayMinMax method returned outrageous values for some images which caused
+    // issues with the sliders and histogram in the UI, and ultimately the display, becase the UI gets populated
+    // based on the range between minimum and maximum values.   We're creating a new arrayMinMax function to remove 
+    // outlier values.
+    // ****************************************
+    var min_max = this.arrayMinMaxRemoveOutliers(first_image_data, first_image_expected_nb_slices);
+    //******************************************
+    //
+    // NRG addition (end) 
+    //
+    //******************************************
     var min = min_max[0];
     var max = min_max[1];
-      //window.console.log("MIN MAZX", min, max);
+    //window.console.log("MIN MAZX", min, max);
 
       
     // attach the scalar range to the volume
@@ -1319,6 +1375,10 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
 	  object[X.volume.REORIENTED_DIMENSIONS_KEY] = 
 	      _transformedDims;
 
+          if (_transformedDims[0] !== first_image_stacks && _transformedDims[1] !== first_image_stacks && _transformedDims[2] !== first_image_stacks) {
+             throw new Error("ERROR:  No transformed dimension matches the expected dimensions");
+          }
+
 	  //
 	  // Determine the anatomical orientation of the 
 	  // volume based on the _transformedDims array.
@@ -1396,8 +1456,6 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
 		  first_image[0]['pixel_spacing'][2];
 	  } 
 
-
-
 	  //
 	  // Output messages as necessary
 	  //
@@ -1408,13 +1466,10 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
 	      "acquired properties."
 	  window.console.log(_msg);
 
-
 	  window.console.log("_transformedDims", _transformedDims);
  	  window.console.log("RASSpacing", volumeAttributes.RASSpacing);
 	  window.console.log("RASDimensions", volumeAttributes.RASDimensions);
 	  window.console.log("RASOrigin", volumeAttributes.RASOrigin);
-	  /*
-	  */
       }
       //******************************
       //
@@ -1428,14 +1483,6 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
     // re-slice the data in SAGITTAL, CORONAL and AXIAL directions
 
       object._image = this.reslice(object);
-      
-  }
-
-  // the object should be set up here, so let's fire a modified event
-  var modifiedEvent = new X.event.ModifiedEvent();
-  modifiedEvent._object = object;
-  modifiedEvent._container = container;
-  this.dispatchEvent(modifiedEvent);
 
 };
 
@@ -1452,14 +1499,24 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
  */
  X.parserDCM.prototype.handleDefaults = function(_bytes, _bytePointer, _VR, _VL) {
     switch (_VR){
+        // OB
       case 16975:
-        // UL
-      case 20819:
-        // SQ
-      case 20053:
-        // UN
-      case 22351:
         // OW
+      case 22351:
+        // SQ
+      case 20819:
+        // UN
+      case 20053:
+        // UT
+      case 21589:
+// See ftp://dicom.nema.org/medical/Dicom/2013/output/chtml/part05/chapter_7.html (See 7.1.2).  2016/11/28 - added UT
+//  to previous list to fix issues with some images.  It appears that the following two values should also be added
+//  to this list, but adding UL caused issues with some images, and the code seems to be reading those fine without passing
+//  through here, so I'm leaving both commented out for now.  
+//        // OF
+//      case 17999:
+//        // UL
+//      case 19541:
 
         // bytes to bits
         function byte2bits(a)
@@ -1495,6 +1552,7 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
           _VL = 0;
         }
 
+        //console.log("Computed VL=", _VL);
         _bytePointer+=_VL/2;
       break;
 
@@ -1502,7 +1560,20 @@ X.parserDCM.prototype.parse = function(container, object, data, flag) {
       _bytePointer+=_VL/2;
         break;
     }
-
+  //******************************************
+  // NRG addition (start) (MRH:  2016/05/03)
+  // ----------------------------------------
+  // Explanation of addition.  Some values were being returned as decimal values here.  Let's make sure that doesn't happen.
+  // ****************************************
+  if (_bytePointer % 1 !== 0) {
+    //console.log("WARNING:  Decimal pointer - rounded");
+    _bytePointer = Math.round(_bytePointer);
+  }
+  //******************************************
+  //
+  // NRG addition (end) 
+  //
+  //******************************************
   return _bytePointer;
 }
 
@@ -1530,6 +1601,22 @@ X.parserDCM.prototype.parseStream = function(data, object) {
   slice['pixel_spacing'] = [.1, .1, Infinity];
   slice['image_orientation_patient'] = [1, 0, 0, 0, 1, 0];
   slice['image_position_patient']  = [0, 0, 0];
+  //************************************
+  //
+  // Moka/NRG addition (start)  (MRH: 2016/10/28)
+  //
+  //------------------------------------
+  // Explanation of addition:
+  // Capture an array of image_orientation_patient and image_position_patient values for use in multi-frame DICOM
+  //------------------------------------
+  slice['image_orientation_patient_arr'] = [];
+  slice['image_position_patient_arr'] = [];
+  //************************************
+  //
+  // Moka/NRG addition (end)
+  //
+  //************************************
+  slice['counter'] = 0;
   // Transfer syntax UIDs
   // 1.2.840.10008.1.2: Implicit VR Little Endian
   // 1.2.840.10008.1.2.1: Explicit VR Little Endian
@@ -1591,7 +1678,9 @@ X.parserDCM.prototype.parseStream = function(data, object) {
     var _skippables = {};
     // For DICOMs w/ Little Endian Explicit
     _skippables.LEE = [
-	[0x0008, 0x1140],
+        // NOTE:  Commenting this out.  0x0008,0x1140 is required for proper multi-frame DICOM support.  I believe this change was made in response to XNAT-3257.
+        // The session in that ticket currently loads with this commented out.
+	//[0x0008, 0x1140],
 	[0x0009, 0x7770],
 	[0x0088, 0x0200],	
     ]
@@ -1610,8 +1699,9 @@ X.parserDCM.prototype.parseStream = function(data, object) {
     // Moka/NRG addition (end)
     //
     //************************************
-
-
+    
+  var _prevPixelData = false;
+  var _inImageInfo = false;
   while (_bytePointer <  _bytes.length) {
 
       _tagGroup = _bytes[_bytePointer++];
@@ -1619,6 +1709,7 @@ X.parserDCM.prototype.parseStream = function(data, object) {
 
       _VR = _bytes[_bytePointer++];
       _VL = _bytes[_bytePointer++];
+
 
       //************************************
       //
@@ -1665,13 +1756,35 @@ X.parserDCM.prototype.parseStream = function(data, object) {
       // ErasmusMC addition (end)
       //
       //************************************
-
+      
+      //******************************************
+      // NRG addition (start) (MRH:  2016/05/03)
+      // ----------------------------------------
+      // Explanation of addition.  Some DICOM contains a tag that indicates the start of pixel data.  These DICOM are likely padded 
+      // at the end of the file.  The image viewer displayed these as split images because prior behavior was to just read
+      // pixel data back from the end of the file.  We use information from this tag to determine the start of pixel data when it's 
+      // available.
+      // ****************************************
+      if (_tagGroup == 0x7FE0) {
+        // Group of DICOM meta info header
+        if (_tagElement == 0x0010) {
+            //console.log("PixelData - 7fe0,0010 - " + _bytePointer);
+            slice['pixel_data_start'] = _bytePointer * 2 + 6;
+            _bytePointer+=_VL/2;
+            _prevPixelData = true;
+            _inImageInfo = false;
+        }
+      }
+      //******************************************
+      //
+      // NRG addition (end) 
+      //
+      //******************************************
 
       // Implicit VR Little Endian case
       if((slice['transfer_syntax_uid'] == '1.2.840.10008.1.2') && (_VL == 0)){
 	  _VL = _VR;
       }
-
 
       //************************************
       //
@@ -1786,8 +1899,8 @@ We would want to skip this (0012, 0064)
 	  window.console.log(
 	      "Current memory address ", _dicomType, '(0x' 
 		  + _tagGroup.toString(16) + ', 0x' 
-		  + _tagElement.toString(16) +')');
-		  */
+		  + _tagElement.toString(16) +'), VR=' + _VR + ", VL=" + _VL);
+	  */
 	  //window.console.log('DICOM type:', _dicomType);
 	  
 	  if (_skipCurrent){
@@ -1796,7 +1909,7 @@ We would want to skip this (0012, 0064)
 		  _tagGroup.toString(16) + ', 0x' +
 		  _tagElement.toString(16) +')' + 
 		  _tagGroup + ' ' +  _tagElement;
-	      window.console.log(_msg);
+	      //window.console.log(_msg);
 
 	      if ((_tagGroup == 0x0008 && _tagElement == 0x1140) || 
 		  (_tagGroup == 0x0009 && _tagElement == 0x7770)){
@@ -1848,24 +1961,35 @@ We would want to skip this (0012, 0064)
       //
       //************************************
 
+    var _clearPrevPixelDataAndInImageInfo = function() {
+       if (_prevPixelData && _inImageInfo) {
+           _inImageInfo = false;
+           _prevPixelData = false;
+       } 
+    }
 
     switch (_tagGroup) {
       case 0x0002:
         // Group of DICOM meta info header
         switch (_tagElement) {
           case 0x0010:
-            // TransferSyntaxUID
-            var _transfer_syntax_uid = '';
-            // pixel spacing is a delimited string (ASCII)
-            var i = 0;
-            for (i = 0; i < _VL / 2; i++) {
-              var _short = _bytes[_bytePointer++];
-              var _b0 = _short & 0x00FF;
-              var _b1 = (_short & 0xFF00) >> 8;
-              _transfer_syntax_uid += String.fromCharCode(_b0);
-              _transfer_syntax_uid += String.fromCharCode(_b1);
+            if (typeof slice['transfer_syntax_uid'] == 'undefined' || slice['transfer_syntax_uid'] == "no_transfer_syntax_uid") {
+              // TransferSyntaxUID
+              var _transfer_syntax_uid = '';
+              // pixel spacing is a delimited string (ASCII)
+              var i = 0;
+              for (i = 0; i < _VL / 2; i++) {
+                var _short = _bytes[_bytePointer++];
+                var _b0 = _short & 0x00FF;
+                var _b1 = (_short & 0xFF00) >> 8;
+                _transfer_syntax_uid += String.fromCharCode(_b0);
+                _transfer_syntax_uid += String.fromCharCode(_b1);
+              }
+              slice['transfer_syntax_uid'] = _transfer_syntax_uid.replace(/\0/g,'');
+            } else {
+               //console.log("WARNING:  ALREADY DEFINED - slice['transfer_syntax_uid']",slice['transfer_syntax_uid']);
+               _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
             }
-            slice['transfer_syntax_uid'] = _transfer_syntax_uid.replace(/\0/g,'');
             break;
           default:
             _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
@@ -1874,19 +1998,65 @@ We would want to skip this (0012, 0064)
 
         break;
 
-
       case 0x0028:
       // Group of IMAGE INFO
+        _inImageInfo = true;
         switch (_tagElement) {
+          case 0x0008:
+            if (_prevPixelData || typeof slice['number_of_frames'] == 'undefined') {
+              var _position = '';
+              for (i = 0; i < _VL / 2; i++) {
+                var _short = _bytes[_bytePointer++];
+                var _b0 = _short & 0x00FF;
+                var _b1 = (_short & 0xFF00) >> 8;
+                _position += String.fromCharCode(_b0);
+                _position += String.fromCharCode(_b1);
+              }
+              if (!isNaN(parseInt(_position,10))) {
+                slice['number_of_frames'] = parseInt(_position, 10); 
+              }
+            } else {
+               window.console.log("WARNING:  ALREADY DEFINED - slice['number_of_frames']",slice['number_of_frames']);
+               _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
+            }
+            break;
+          case 0x0009:
+            if (_prevPixelData || typeof slice['frame_increment_pointer'] == 'undefined') {
+              var _position = '';
+              for (i = 0; i < _VL / 2; i++) {
+                var _short = _bytes[_bytePointer++];
+                var _b0 = _short & 0x00FF;
+                var _b1 = (_short & 0xFF00) >> 8;
+                _position += String.fromCharCode(_b0);
+                _position += String.fromCharCode(_b1);
+              }
+              if (!isNaN(parseInt(_position,10))) {
+                slice['frame_increment_pointer'] = parseInt(_position, 10); 
+              }
+            } else {
+               window.console.log("WARNING:  ALREADY DEFINED - slice['frame_increment_pointer']",slice['frame_increment_pointer']);
+               _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
+            }
+            break;
           case 0x0010:
-            // rows
-            slice['rows'] = _bytes[_bytePointer];
-            _bytePointer+=_VL/2;
+            if (_prevPixelData || typeof slice['rows'] == 'undefined') {
+              // rows
+              slice['rows'] = _bytes[_bytePointer];
+              _bytePointer+=_VL/2;
+            } else {
+               window.console.log("WARNING:  ALREADY DEFINED - slice['rows']",slice['rows']);
+               _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
+            }
             break;
           case 0x0011:
             // cols
-            slice['columns'] = _bytes[_bytePointer];
-            _bytePointer+=_VL/2;
+            if (_prevPixelData || typeof slice['columns'] == 'undefined') {
+              slice['columns'] = _bytes[_bytePointer];
+              _bytePointer+=_VL/2;
+            } else {
+               window.console.log("WARNING:  ALREADY DEFINED - slice['columns']",slice['columns']);
+               _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
+            }
             break;
           case 0x0100:
             // bits allocated
@@ -1898,28 +2068,43 @@ We would want to skip this (0012, 0064)
             break;
           case 0x0101:
             // bits stored
-            slice['bits_stored'] = _bytes[_bytePointer];
-            _bytePointer+=_VL/2;
+            if (_prevPixelData || typeof slice['bits_stored'] == 'undefined') {
+              slice['bits_stored'] = _bytes[_bytePointer];
+              _bytePointer+=_VL/2;
+            } else {
+               window.console.log("WARNING:  ALREADY DEFINED - slice['bits_stored']",slice['bits_stored']);
+               _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
+            }
             break;
           case 0x0002:
             // number of images
-            slice['number_of_images'] = _bytes[_bytePointer];
-            _bytePointer+=_VL/2;
+            if (_prevPixelData || typeof slice['number_of_images'] == 'undefined') {
+              slice['number_of_images'] = _bytes[_bytePointer];
+              _bytePointer+=_VL/2;
+            } else {
+               //console.log("WARNING:  ALREADY DEFINED - slice['number_of_images']",slice['number_of_images']);
+               _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
+            }
             break;
           case 0x0030:
             // pixel spacing
-            var _pixel_spacing = '';
-            // pixel spacing is a delimited string (ASCII)
-            var i = 0;
-            for (i = 0; i < _VL / 2; i++) {
-              var _short = _bytes[_bytePointer++];
-              var _b0 = _short & 0x00FF;
-              var _b1 = (_short & 0xFF00) >> 8;
-              _pixel_spacing += String.fromCharCode(_b0);
-              _pixel_spacing += String.fromCharCode(_b1);
-            }
-            _pixel_spacing = _pixel_spacing.split("\\");
-            slice['pixel_spacing'] = [ parseFloat(_pixel_spacing[0]), parseFloat(_pixel_spacing[1]), Infinity ];
+            //if (typeof slice['pixel_spacing'] == 'undefined') {
+              var _pixel_spacing = '';
+              // pixel spacing is a delimited string (ASCII)
+              var i = 0;
+              for (i = 0; i < _VL / 2; i++) {
+                var _short = _bytes[_bytePointer++];
+                var _b0 = _short & 0x00FF;
+                var _b1 = (_short & 0xFF00) >> 8;
+                _pixel_spacing += String.fromCharCode(_b0);
+                _pixel_spacing += String.fromCharCode(_b1);
+              }
+              _pixel_spacing = _pixel_spacing.split("\\");
+              slice['pixel_spacing'] = [ parseFloat(_pixel_spacing[0]), parseFloat(_pixel_spacing[1]), Infinity ];
+            //} else {
+            //   window.console.log("WARNING:  ALREADY DEFINED - slice['pixel_spacing']",slice['pixel_spacing']);
+            //   _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
+            //}
             break;
 
           case 0x1052: // rescale intercept
@@ -1940,66 +2125,117 @@ We would want to skip this (0012, 0064)
         break;
       
       case 0x0020:
+        _clearPrevPixelDataAndInImageInfo();
         // Group of SLICE INFO
         switch (_tagElement) {
           case 0x000e:
             // Series instance UID
-            slice['series_instance_uid'] = "";
-            var i = 0;
-            for (i = 0; i < _VL / 2; i++) {
-              var _short = _bytes[_bytePointer++];
-              var _b0 = _short & 0x00FF;
-              var _b1 = (_short & 0xFF00) >> 8;
-              slice['series_instance_uid'] += String.fromCharCode(_b0);
-              slice['series_instance_uid'] += String.fromCharCode(_b1);
+            if (typeof slice['series_instance_uid'] == 'undefined') {
+              slice['series_instance_uid'] = "";
+              var i = 0;
+              for (i = 0; i < _VL / 2; i++) {
+                var _short = _bytes[_bytePointer++];
+                var _b0 = _short & 0x00FF;
+                var _b1 = (_short & 0xFF00) >> 8;
+                slice['series_instance_uid'] += String.fromCharCode(_b0);
+                slice['series_instance_uid'] += String.fromCharCode(_b1);
+              }
+            } else {
+               window.console.log("WARNING:  ALREADY DEFINED - slice['series_instance_uid']",slice['series_instance_uid']);
+               _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
             }
             break;
           case 0x0013:
-            var _position = '';
-            for (i = 0; i < _VL / 2; i++) {
-              var _short = _bytes[_bytePointer++];
-              var _b0 = _short & 0x00FF;
-              var _b1 = (_short & 0xFF00) >> 8;
-              _position += String.fromCharCode(_b0);
-              _position += String.fromCharCode(_b1);
-            }
-            slice['instance_number'] = parseInt(_position, 10); 
+            if (typeof slice['instance_number'] == 'undefined' || slice['instance_number'] == 0) {
+              var _position = '';
+              for (i = 0; i < _VL / 2; i++) {
+                var _short = _bytes[_bytePointer++];
+                var _b0 = _short & 0x00FF;
+                var _b1 = (_short & 0xFF00) >> 8;
+                _position += String.fromCharCode(_b0);
+                _position += String.fromCharCode(_b1);
+              }
+              if (!isNaN(parseInt(_position,10))) {
+                slice['instance_number'] = parseInt(_position, 10); 
+              }
+            } else {
+               window.console.log("WARNING:  ALREADY DEFINED - slice['instance_number']",slice['instance_number']);
+               _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
+            } 
             break;
           case 0x0032:
-            // image position
-            var _image_position = '';
-            var i = 0;
-            for (i = 0; i < _VL / 2; i++) {
-              var _short = _bytes[_bytePointer++];
-              var _b0 = _short & 0x00FF;
-              var _b1 = (_short & 0xFF00) >> 8;
-              _image_position += String.fromCharCode(_b0);
-              _image_position += String.fromCharCode(_b1);
-            }
-            _image_position = _image_position.split("\\");
-            slice['image_position_patient'] = [ parseFloat(_image_position[0]), parseFloat(_image_position[1]),
-                parseFloat(_image_position[2]) ];
-            // _tagCount--;
+            //if (typeof slice['image_position_patient'] == 'undefined' || slice['image_position_patient'].toString() == ([0, 0, 0]).toString()) {
+              // image position
+              var _image_position = '';
+              var i = 0;
+              for (i = 0; i < _VL / 2; i++) {
+                var _short = _bytes[_bytePointer++];
+                var _b0 = _short & 0x00FF;
+                var _b1 = (_short & 0xFF00) >> 8;
+                _image_position += String.fromCharCode(_b0);
+                _image_position += String.fromCharCode(_b1);
+              }
+              _image_position = _image_position.split("\\");
+              slice['image_position_patient'] = [ parseFloat(_image_position[0]), parseFloat(_image_position[1]),
+                  parseFloat(_image_position[2]) ];
+              //************************************
+              //
+              // Moka/NRG addition (start)  (MRH:2016/10/28)
+              //
+              //------------------------------------
+              // Explanation of addition:
+              // Capture an array of image_orientation_patient and image_position_patient values for use in multi-frame DICOM
+              //------------------------------------
+              slice['image_position_patient_arr'].push(slice['image_position_patient']);
+              //************************************
+              //
+              // Moka/NRG addition (end)
+              //
+              //************************************
+              // _tagCount--;
+            //} else {
+            //   window.console.log("WARNING:  ALREADY DEFINED - slice['image_position_patient']",slice['image_position_patient']);
+            //   _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
+            //}
             break;
           case 0x0037:
-            // image orientation
-            // pixel spacing
-            var _image_orientation = '';
-            // pixel spacing is a delimited string (ASCII)
-            var i = 0;
-            for (i = 0; i < _VL / 2; i++) {
-              var _short = _bytes[_bytePointer++];
-              var _b0 = _short & 0x00FF;
-              var _b1 = (_short & 0xFF00) >> 8;
-              _image_orientation += String.fromCharCode(_b0);
-              _image_orientation += String.fromCharCode(_b1);
-            }
-            _image_orientation = _image_orientation.split("\\");
-            slice['image_orientation_patient'] = [ parseFloat(_image_orientation[0]),
-                parseFloat(_image_orientation[1]), parseFloat(_image_orientation[2]),
-                parseFloat(_image_orientation[3]), parseFloat(_image_orientation[4]),
-                parseFloat(_image_orientation[5]) ];
-            // _tagCount--;
+            //if (typeof slice['image_orientation_patient'] == 'undefined') {
+              // image orientation
+              // pixel spacing
+              var _image_orientation = '';
+              // pixel spacing is a delimited string (ASCII)
+              var i = 0;
+              for (i = 0; i < _VL / 2; i++) {
+                var _short = _bytes[_bytePointer++];
+                var _b0 = _short & 0x00FF;
+                var _b1 = (_short & 0xFF00) >> 8;
+                _image_orientation += String.fromCharCode(_b0);
+                _image_orientation += String.fromCharCode(_b1);
+              }
+              _image_orientation = _image_orientation.split("\\");
+              slice['image_orientation_patient'] = [ parseFloat(_image_orientation[0]),
+                  parseFloat(_image_orientation[1]), parseFloat(_image_orientation[2]),
+                  parseFloat(_image_orientation[3]), parseFloat(_image_orientation[4]),
+                  parseFloat(_image_orientation[5]) ];
+              //************************************
+              //
+              // Moka/NRG addition (start)  (MRH:2016/10/28)
+              //
+              //------------------------------------
+              // Explanation of addition:
+              // Capture an array of image_orientation_patient and image_position_patient values for use in multi-frame DICOM
+              //------------------------------------
+              slice['image_orientation_patient_arr'].push(slice['image_orientation_patient']);
+              //************************************
+              //
+              // Moka/NRG addition (end)
+              //
+              //************************************
+              // _tagCount--;
+            //} else {
+            //   window.console.log("WARNING:  ALREADY DEFINED - slice['image_orientation_patient']",slice['image_orientation_patient']);
+            //   _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
+            //}
             break;
 
           default:
@@ -2010,6 +2246,7 @@ We would want to skip this (0012, 0064)
         break;
 
     case 0xfffe:
+        _clearPrevPixelDataAndInImageInfo();
         // Group of undefined item
         // here we are only interested in the InstanceNumber
         switch (_tagElement) {
@@ -2028,19 +2265,25 @@ We would want to skip this (0012, 0064)
         break;
 
     case 0x0008:
+        _clearPrevPixelDataAndInImageInfo();
         // Group of SLICE INFO
         // here we are only interested in the InstanceNumber
         switch (_tagElement) {
           case 0x0018:
             // Image instance UID
-            slice['sop_instance_uid'] = "";
-            var i = 0;
-            for (i = 0; i < _VL / 2; i++) {
-              var _short = _bytes[_bytePointer++];
-              var _b0 = _short & 0x00FF;
-              var _b1 = (_short & 0xFF00) >> 8;
-              slice['sop_instance_uid'] += String.fromCharCode(_b0);
-              slice['sop_instance_uid'] += String.fromCharCode(_b1);
+            if (typeof slice['sop_instance_uid'] == 'undefined') {
+              slice['sop_instance_uid'] = "";
+              var i = 0;
+              for (i = 0; i < _VL / 2; i++) {
+                var _short = _bytes[_bytePointer++];
+                var _b0 = _short & 0x00FF;
+                var _b1 = (_short & 0xFF00) >> 8;
+                slice['sop_instance_uid'] += String.fromCharCode(_b0);
+                slice['sop_instance_uid'] += String.fromCharCode(_b1);
+              }
+            } else {
+               //console.log("WARNING:  ALREADY DEFINED - slice['sop_instance_uid']",slice['sop_instance_uid']);
+               _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
             }
             break;
 
@@ -2055,14 +2298,19 @@ We would want to skip this (0012, 0064)
           //************************************          
 
           case 0x103E:
-              object['series_description'] = "";
-              var i = 0;
-              for (i = 0; i < _VL / 2; i++) {
-                var _short = _bytes[_bytePointer++];
-                var _b0 = _short & 0x00FF;
-                var _b1 = (_short & 0xFF00) >> 8;
-                object['series_description'] += String.fromCharCode(_b0);
-                object['series_description'] += String.fromCharCode(_b1);
+              if (typeof slice['series_description'] == 'undefined') {
+                object['series_description'] = "";
+                var i = 0;
+                for (i = 0; i < _VL / 2; i++) {
+                  var _short = _bytes[_bytePointer++];
+                  var _b0 = _short & 0x00FF;
+                  var _b1 = (_short & 0xFF00) >> 8;
+                  object['series_description'] += String.fromCharCode(_b0);
+                  object['series_description'] += String.fromCharCode(_b1);
+                }
+              } else {
+                 window.console.log("WARNING:  ALREADY DEFINED - slice['series_description']",slice['series_description']);
+                 _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
               }
               break;
 
@@ -2081,21 +2329,27 @@ We would want to skip this (0012, 0064)
 
 
     case 0x0010:
+        _clearPrevPixelDataAndInImageInfo();
         // Group of SLICE INFO
         // here we are only interested in the InstanceNumber
         switch (_tagElement) {
           case 0x2210:
-            // anatomical orientation
-            // pixel spacing
-            var _anatomical_orientation = '';
-            // pixel spacing is a delimited string (ASCII)
-            var i = 0;
-            for (i = 0; i < _VL / 2; i++) {
-              var _short = _bytes[_bytePointer++];
-              var _b0 = _short & 0x00FF;
-              var _b1 = (_short & 0xFF00) >> 8;
-              _anatomical_orientation += String.fromCharCode(_b0);
-              _anatomical_orientation += String.fromCharCode(_b1);
+            if (typeof _anatomical_orientation == 'undefined') {
+               // anatomical orientation
+               // pixel spacing
+               var _anatomical_orientation = '';
+               // pixel spacing is a delimited string (ASCII)
+               var i = 0;
+               for (i = 0; i < _VL / 2; i++) {
+                 var _short = _bytes[_bytePointer++];
+                 var _b0 = _short & 0x00FF;
+                 var _b1 = (_short & 0xFF00) >> 8;
+                 _anatomical_orientation += String.fromCharCode(_b0);
+                 _anatomical_orientation += String.fromCharCode(_b1);
+               }
+            } else {
+                 window.console.log("WARNING:  ALREADY DEFINED - _anatomical_orientation",_anatomical_orientation);
+                 _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
             }
             break;
 
@@ -2129,8 +2383,8 @@ We would want to skip this (0012, 0064)
                 break;
             }
 	}
-*/
         break;
+*/
 
     //       default:
     //         _bytePointer = X.parserDCM.prototype.handleDefaults(_bytes, _bytePointer, _VR, _VL);
@@ -2138,8 +2392,35 @@ We would want to skip this (0012, 0064)
     //       }
 
       default:
+        _clearPrevPixelDataAndInImageInfo();
         _bytePointer = X.parserDCM.prototype.handleDefaults(
-	    _bytes, _bytePointer, _VR, _VL);
+	     _bytes, _bytePointer, _VR, _VL);
+        //******************************************
+        // NRG addition (start) (MRH:  2016/05/05)
+        // ----------------------------------------
+        // Explanation of addition:  Let's try not to parse into the pixel data for images where we don't have a tag telling
+        // us where it is.  It is not uncommon to hit random sequences that look like the DICOM tags we're parsing for, and
+        // this was causing some issues.  This should be a conservative estimate of the location of the data, assuming it's
+        // at the end of the file and using image size and number of frames, when we have it, to determine the staring point.
+        // ****************************************
+        if (typeof slice['columns'] !== 'undefined' && typeof slice['rows'] !== 'undefined') {
+          var imgSize = slice['columns'] * slice['rows'] * 2;
+          var nFrames = slice['number_of_frames'];
+          if (typeof nFrames == 'undefined' || isNaN(parseInt(nFrames))) {
+             nFrames = 1;
+          } 
+          var estPixelDataStart = this._data.byteLength - imgSize * nFrames;
+          // Shouldn't be necessary to add 10 here.  Just adding a small measure of safety.
+          if (_bytePointer > (estPixelDataStart+10)) {
+             //window.console.log("DICOM PARSE:  Hit pixel data [_bytePointer=" + _bytePointer + "].  Stop parsing.");
+             _bytePointer = Number.MAX_VALUE;
+          }
+        }
+        //******************************************
+        //
+        // NRG addition (end) 
+        //
+        //******************************************
         break;
       }
 
@@ -2159,27 +2440,93 @@ We would want to skip this (0012, 0064)
     }
 
   // no need to jump anymore, parse data as any DICOM field.
-  // jump to the beginning of the pixel data
-  this.jumpTo(this._data.byteLength - slice['columns'] * slice['rows'] * 2);
-  // check for data type and parse accordingly
-  var _data = null;
+        
+  //******************************************
+  // NRG changes (start) (MRH:  2016/05/XX)
+  // ----------------------------------------
+  // Explanation of changes.  This section has been modified to support multi-frame DICOM and to use the DICOM 0x7FE0, 0x0010
+  // tag to locate pixel data where it is available.  Previous versions had just read from the end of the file.
+  // ****************************************
 
-  switch (slice.bits_allocated) {
-  case 8:
-    _data = this.scan('uchar', slice['columns'] * slice['rows']);
-    break;
-  case 16:
-     _data = this.scan('ushort', slice['columns'] * slice['rows']);
-    break;
-  case 32:
-    _data = this.scan('uint', slice['columns'] * slice['rows']);
-    break;
-  }
+  var imgSize = slice['columns'] * slice['rows'] * 2;
+  var nFrames = slice['number_of_frames'];
+  if (typeof nFrames == 'undefined' || isNaN(parseInt(nFrames))) {
+     nFrames = 1;
+  } else if (nFrames > 1) {
+     object.isMultiframeDicom = true;
+  } 
+
+  var pixelDataStart = slice['pixel_data_start'];
+
+  var iopos;
+  var ippos;
+  var ippos_prev;
+  for (var i=nFrames; i>0; i--) {
+
+    var thisSlice = (nFrames<=1) ? slice : JSON.parse(JSON.stringify(slice)); 
+    
+     // jump to the beginning of the pixel data
+    if (typeof pixelDataStart !== 'undefined') {
+      this.jumpTo(pixelDataStart + (imgSize*nFrames) - (imgSize*i));
+      //window.console.log("DICOM PARSE:  Using pixelDataStart for selection of pixel data");
+    } else {
+      this.jumpTo(this._data.byteLength - imgSize * i);
+      //window.console.log("DICOM PARSE:  Using _data.byteLength for selection of pixel data");
+    }
+    // check for data type and parse accordingly
+    var _data = null;
+  
+    switch (thisSlice.bits_allocated) {
+    case 8:
+      _data = this.scan('uchar', thisSlice['columns'] * thisSlice['rows']);
+      break;
+    case 16:
+       _data = this.scan('ushort', thisSlice['columns'] * thisSlice['rows']);
+      break;
+    case 32:
+      _data = this.scan('uint', thisSlice['columns'] * thisSlice['rows']);
+      break;
+    }
     
     //window.console.log("END\n\n");
-  slice['data'] = _data;
+    thisSlice['data'] = _data;
 
-  object.slices.push(slice);
+    if (nFrames>1) {
+      thisSlice['instance_number'] = nFrames-i+1;
+    }
+    
+    // MRH:  2016/10/28
+    // Pull slice image_orientation_patient and image_position patient from the array of values collected earlier
+    // NOTE:  some of the values are getting skipped.  I'm not sure why.  Here, we're doing the best we can to 
+    // match values up with values from the arrays.  Using the values allows us to determine orientation
+    // UPDATE:  I believe fix for XNAT-4568 (2016/11/10) fixes the issue of some tags being skipped.
+    if (slice['image_orientation_patient_arr'].length>1) {
+      if (slice['image_orientation_patient_arr'].length<nFrames) {
+         iopos = Math.round((i-1)*(slice['image_orientation_patient_arr'].length/nFrames));
+         if (iopos>=nFrames) {
+            iopos--;
+         } 
+      } else {
+         iopos = i;
+      }
+      ippos = (slice['image_orientation_patient_arr'].length*2<=slice['image_position_patient_arr'].length) ? iopos*2 : iopos;
+      if (ippos==ippos_prev && ippos>0) {
+        ippos--;
+      }
+      iopos = (iopos>=0 && iopos<thisSlice["image_orientation_patient_arr"].length) ? iopos : ((iopos>=0) ? thisSlice["image_orientation_patient_arr"].length-1 : 0); 
+      ippos = (ippos>=0 && ippos<thisSlice["image_position_patient_arr"].length) ? ippos : ((ippos>=0) ? thisSlice["image_position_patient_arr"].length-1 : 0); 
+      thisSlice["image_orientation_patient"]=(thisSlice["image_orientation_patient_arr"])[iopos];
+      thisSlice["image_position_patient"]=(thisSlice["image_position_patient_arr"])[ippos];
+      ippos_prev = ippos;
+    }
+    object.slices.push(thisSlice);
+        
+  //******************************************
+  // 
+  // NRG changes (end) 
+  // 
+  // ****************************************
+  } 
 
   return object;
 };
@@ -2187,3 +2534,5 @@ We would want to skip this (0012, 0064)
 // export symbols (required for advanced compilation)
 goog.exportSymbol('X.parserDCM', X.parserDCM);
 goog.exportSymbol('X.parserDCM.prototype.parse', X.parserDCM.prototype.parse);
+
+
